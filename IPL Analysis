@@ -1,0 +1,91 @@
+-- Dataset: IPL Data from 2008-2016 consisting of a total of 21 tables.--
+
+
+--Top 3 players with most amount of runs in '1-6', '7-16', '17-20' overs--
+
+WITH Playerrank AS (
+SELECT
+P.Player_Name,
+SUM(BS.Runs_Scored) AS Runs,
+COUNT(BS.ball_id) AS Balls_faced,
+CASE
+WHEN BS.over_id > 16 THEN '17-20'
+WHEN BS.over_id < 7 THEN '1-6'
+WHEN BS.over_id > 6 AND BS.over_id < 17 THEN '7-16'
+END AS Overs,
+ROW_NUMBER() OVER (PARTITION BY
+CASE
+WHEN BS.over_id > 16 THEN '17-20'
+WHEN BS.over_id < 7 THEN '1-6'
+WHEN BS.over_id > 6 AND BS.over_id < 17 THEN '7-16'
+END
+ORDER BY SUM(BS.Runs_Scored) DESC) AS Position
+FROM [IPL].[dbo].[Batsman_Scored] BS
+JOIN IPL.dbo.Player_Match PM 
+ON BS.Match_Id = PM.Match_Id
+JOIN IPL.dbo.Player P 
+ON PM.Player_Id = P.Player_Id
+GROUP BY P.Player_Name, BS.over_id
+)
+SELECT Player_Name, Runs, Balls_faced, Overs, Position
+FROM Playerrank
+WHERE Position <= 3
+ORDER BY Overs, Position;
+
+
+--Total Runs in Boundries per Season--
+
+SELECT T.Season_Year, T.Fours, T.Sixes ,SUM(T.Fours*4+T.Sixes*6) AS 'Total from Boundaries' 
+FROM
+(SELECT S.Season_year,
+SUM(
+  CASE
+  WHEN BS.Runs_scored= '4' THEN '1'
+  ELSE 0
+  END) AS Fours,
+SUM(
+CASE
+  WHEN Bs.Runs_scored= '6' THEN '1'
+  ELSE 0
+END) AS Sixes
+from ipl.dbo.Season S
+JOIN ipl.dbo.match M
+ON S.season_id= M.season_id
+JOIN ipl.dbo.batsman_scored BS
+ON M.Match_id= BS.match_id
+GROUP BY s.season_year) T
+GROUP BY T.Season_Year, T.Fours, T.Sixes;
+
+
+--Team which gave the most amount of Extra Runs per season--
+
+WITH Total_Extras AS
+(SELECT S.Season_Year, T.Team_Name, SUM(ER.Extra_Runs) AS 'Extras', row_number() OVER(PARTITION BY S.Season_Year ORDER BY SUM(ER.Extra_Runs) DESC) AS 'R' 
+FROM IPL.DBO.Player P
+JOIN IPL.DBO.Player_Match PM
+ON P.Player_Id= PM.Player_Id
+JOIN IPL.DBO.Team T
+ON PM.Team_Id= T.Team_Id
+JOIN IPL.DBO.Match M
+ON PM.Match_Id= M.Match_Id
+JOIN IPL.DBO.Season S
+ON M.Season_Id= S.Season_Id
+JOIN IPL.DBO.Extra_Runs ER
+ON M.Match_Id= ER.Match_Id
+GROUP BY S.Season_Year, T.Team_Name)
+SELECT Season_Year, Team_Name, Extras from Total_Extras
+WHERE R=1;
+
+
+--Top 5 Stadiums with most Runs--
+
+SELECT TOP 5 V.Venue_Name, C.City_Name, SUM(BS.Runs_Scored) AS 'Total_Runs' 
+FROM IPL.DBO.City C
+JOIN IPL.DBO.Venue V
+ON C.City_Id= V.City_Id
+JOIN IPL.DBO.Match M
+ON V.Venue_Id= M.Venue_Id
+JOIN IPL.DBO.Batsman_Scored BS
+ON M.Match_Id= BS.Match_Id
+GROUP BY V.Venue_Name, C.City_Name
+ORDER BY Total_Runs DESC;
